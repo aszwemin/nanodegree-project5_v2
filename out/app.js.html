@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: app.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: app.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/* global google, alert, ko, setTimeout */
+
+/**
+ * DetailElement model for displaying details of search results
+ * @class
+ * @this {DetailElement}
+ * @param {object} details - json of place details
+ */
+function DetailElement(details) {
+  this.placeId = details.placeId;
+  this.name = details.name;
+  this.icon = details.icon;
+  this.type = details.type;
+  this.location = details.location;
+  this.openingHours = ko.observable(details.openingHours);
+  this.open = ko.observable(details.openingHours ? details.openingHours.open_now : null);
+  this.phone = ko.observable('N/A');
+  this.address = ko.observable('N/A');
+  this.url = ko.observable('N/A');
+  this.chevronClass = ko.observable('glyphicon-chevron-down');
+  this.visible = ko.observable(false);
+  this.marker = details.marker;
+
+  /**
+   * Function for setting data based on json
+   * @memberof DetailElement
+   * @method
+   * @access public
+   * @param {object} details - json of place details
+   */
+  this.setDetails = function(details) {
+    this.address(details.address || 'N/A');
+    this.phone(details.phone || 'N/A');
+    this.url(details.url || 'N/A');
+    this.reviews = details.reviews;
+    this.openingHours(details.openingHours);
+    this.open = ko.observable(details.openingHours ? details.openingHours.open_now : null);
+  };
+}
+
+/**
+ * ViewModel for the application
+ * @class
+ * @this {ViewModel}
+ */
+function ViewModel() {
+
+  var self = this;
+
+  // Check if google is defined, if not google maps may be blocked
+  if (typeof google === "undefined") {
+    alert("Can't connect to google maps, please check your firewall settings");
+    return;
+  }
+
+  // Constants
+  this.possiblePlaceTypes = ["art_gallery", "book_store", "bowling_alley", "casino", "bank", "hospital",
+                            "museum", "place_of_worship", "bar", "cafe", "taxi_stand", "train_station"];
+  this.defaultPlaceTypes = ["cafe", "museum", "bowling_alley", "casino"];
+
+  this.geocoder = new google.maps.Geocoder();
+  this.mapCenter = ko.observable(getLocationFromJson({ lat: -34.397, lng: 150.644 }));
+  this.currentLocation = ko.observable("London");
+  this.radius = ko.observable(200);
+  this.zoom = ko.observable(16);
+  this.placeTypes = ko.observableArray(this.defaultPlaceTypes);
+  this.markers = ko.observableArray([]);
+
+  // Internal workings
+  this._infowindow = new google.maps.InfoWindow();
+
+  // Searching functionality
+  this.searchString = ko.observable('');
+  this.searchResults = ko.observableArray([]);
+  this.searchResultsVisible = ko.computed(function() {
+    return this.searchResults() &amp;&amp; this.searchString() &amp;&amp; !this._searchSelected;
+  }, this);
+  this._initialSearchResults = [];
+  this._searchTexts = [];
+  this._searchSelected = false;
+
+  // Search results details
+  this.searchResultsDetails = ko.observableArray([]);
+  this.placeDetails = ko.observable();
+
+  // Weather info
+  this.weather = ko.observable(null);
+  
+  // User visible error
+  this.error = ko.observable('');
+
+  // Below set of functions are inner workings of the application
+  
+  /** 
+   * Get google maps location from a json
+   * @memberof ViewModel
+   * @method
+   * @param {object} locationJson - json with lattitude and longitude
+   */
+  function getLocationFromJson(locationJson) {
+    return new google.maps.LatLng(locationJson.lat, locationJson.lng);
+  }
+
+  /** 
+   * Get information from google places and set up markers and details
+   * @memberof ViewModel
+   * @method
+   */
+  function getPlaces() {
+    function processPlaces(results, status) {
+      var detailElement = null;
+      var marker = null;
+      if (status === google.maps.places.PlacesServiceStatus.OK) {
+        self.searchResultsDetails([]);
+        self._initialSearchResults = [];
+        setAllMarkers(null);
+        results.forEach(function(result) {
+          marker = createMarker(result);
+          if (marker) {
+            detailElement = new DetailElement({
+              placeId: result.place_id,
+              name: result.name, 
+              icon: result.icon, 
+              type: result.types[0],
+              location: result.geometry.location,
+              openingHours: result.opening_hours,
+              marker: marker
+            });
+            self.searchResultsDetails.push(detailElement);
+            self._initialSearchResults.push(detailElement);
+            service.getDetails({placeId: result.place_id}, processDetails.bind(detailElement));
+          }
+        });
+      } else {
+        showError("Getting Places was not successful for the following reason: " + status);
+      }
+    }
+
+    function processDetails(result, status) {
+      var getDetails = function(r) {
+        return {
+          address: r.formatted_address,
+          phone: r.international_phone_number,
+          url: r.website,
+          reviews: r.reviews,
+          openingHours: r.opening_hours
+        };
+      };
+      var details;
+      var that = this;
+      if (status === google.maps.places.PlacesServiceStatus.OK) {
+        details = getDetails(result);
+        that.setDetails(details);
+      } else {
+			    setTimeout(function() {
+            service.getDetails({placeId: that.placeId}, processDetails.bind(that));
+          }, 1000);
+      }
+    }
+
+    var request = {
+      location: self.mapCenter(),
+      radius: self.radius(),
+      types: self.placeTypes()
+    };
+    var service = new google.maps.places.PlacesService(self.map);
+    service.nearbySearch(request, processPlaces);
+  }
+
+  /**
+   * Main function for getting the location information.
+   * Request coordinates of named location, get weather, set map and request markers
+   * @memberof ViewModel
+   * @method
+   * @param {string} address - name of the location, e.g. London
+   */
+  function getLocationInformation(address) {
+    self.geocoder.geocode( { 'address': address}, function(results, status) {
+      if (status === google.maps.GeocoderStatus.OK) {
+        var newLocation = results[0].geometry.location;
+        $.ajax({
+          url: "http://api.openweathermap.org/data/2.5/weather?lat=" + newLocation.lat() + "&amp;lon=" + newLocation.lng() + "&amp;units=metric"
+        })
+        .done(function(data) {
+          self.weather({
+            temperature: Math.round(data.main.temp),
+            icon: data.weather[0].icon
+          });
+        })
+        .fail(function(error) {
+          console.log(error);
+          self.weather(null);
+          showError("Open weather API call failed for the following reason: " + error.statusText);
+        });
+        self.map.setCenter(newLocation);
+        self.currentLocation(address);
+        self.mapCenter(newLocation);
+        getPlaces();
+      } else {
+        showError("Geocode was not successful for the following reason: " + status);
+      }
+    });
+  }
+
+  /**
+   * Set infowindow for a given marker
+   * @memberof ViewModel
+   * @method
+   * @param {object}  marker - marker for which to det the infowindow
+   */
+  function setInfowindow(marker) {
+    function getInfowindowHtml() {
+      var detail = null;
+      for (var resultIndex in self.searchResultsDetails()) {
+        detail = self.searchResultsDetails()[resultIndex];
+        if (marker.placeId === detail.placeId) {
+          break;
+        }
+      }
+      if (detail !== null) {
+        return (
+          '&lt;h4>' + detail.name + '&lt;/h4>' +
+          '&lt;div class="no-gutter">' +
+            '&lt;span class="glyphicon glyphicon-earphone" style="padding-right: 10px;" aria-hidden="true">&lt;/span>' +
+            '&lt;span>' + detail.phone() + '&lt;/span>' +
+          '&lt;/div>' +
+          '&lt;div class="no-gutter">' +
+            '&lt;span class="glyphicon glyphicon-home" style="padding-right: 10px;" aria-hidden="true">&lt;/span>' +
+            '&lt;span>' + detail.address() + '&lt;/span>' +
+          '&lt;/div>'
+        );
+      } else {
+        return null;
+      }
+    }
+    var position = marker.getPosition();
+    // picture for infowindow is being pulled from street view api
+    var infowindowHtml = getInfowindowHtml();
+    if (infowindowHtml !== null ) {
+      self._infowindow.setContent(infowindowHtml);
+      self._infowindow.setPosition(position);
+      self._infowindow.open(self.map, marker);
+      google.maps.event.addListener(self._infowindow,'closeclick',function(){
+      });
+    }
+  }
+
+  /**
+   * Show infowindow for a given marker and bounce the marker
+   * @memberof ViewModel
+   * @method
+   * @param {object} marker - marker for which to set infowindow
+   */
+  function showInfowindow(marker) {
+    if (!marker) {
+      return;
+    }
+    marker.setAnimation(google.maps.Animation.BOUNCE);
+    setTimeout(function() {
+      marker.setAnimation(null);
+    }, 1400);
+    setInfowindow(marker);
+  }
+
+  /**
+   * Create marker for a place
+   * @memberof ViewModel
+   * @method
+   * @param {object} place - place returned but the google places
+   */
+  function createMarker(place) {
+    if (self.placeTypes().indexOf(place.types[0]) === -1) {
+      return;
+    }
+    var placeLoc = place.geometry.location;
+    var image = {
+        url: place.icon,
+        size: new google.maps.Size(25, 25),
+        origin: new google.maps.Point(0, 0),
+        scaledSize: new google.maps.Size(25, 25)
+    };
+    var marker = new google.maps.Marker({
+      map: self.map,
+      position: placeLoc,
+      title: place.name,
+      icon: image,
+      type: place.types[0],
+      placeId: place.place_id
+    });
+    google.maps.event.addListener(marker, 'click', function() {
+      showInfowindow(marker);
+    });
+    self.markers.push(marker);
+    return marker;
+  }
+
+  /**
+   * Set all markers to a given map 
+   * @memberof ViewModel
+   * @method
+   * @param {object} map - map on which to set markers (null removes all markers from the map)
+   */
+  function setAllMarkers(map) {
+    self.markers().forEach(function(marker) {
+      marker.setMap(map);
+    });
+  }
+
+  /** 
+   * Show error to the user when something goes wrong
+   * @memberof ViewModel
+   * @method
+   * @param {string} error - error string to be displayed to the user
+   */
+  function showError(error) {
+    self.error(error);
+    $('#errorModal').modal('show');
+  }
+
+  /**
+   * Initialize the map
+   * @memberof ViewModel
+   * @method
+   * @param {DOMNode} DOMElement - DOM element for displaying the map
+   */
+  this.initMap = function(DOMElement) {
+    var mapOptions = {
+      center: self.mapCenter(),
+      zoom: self.zoom()
+    };
+    self.map = new google.maps.Map(DOMElement, mapOptions);
+  };
+
+  /**
+   * Save settings from the settings form on the modal
+   * @memberof ViewModel
+   * @method
+   * @param {object} form - form from which to save the settings
+   */
+  this.saveSettings = function(form) {
+    if (self.placeTypes().length === 0) {
+      showError('Please select at least one type');
+      return;
+    }
+    var location = $('#formLocation', form).val();
+    getLocationInformation(location);
+    $('#settingsModal').modal('hide');
+  };
+
+  /**
+   * Select search result from the results list and set the details
+   * @memberof ViewModel
+   * @method
+   * @param {object} selectedResult - result selected from the results list
+   */
+  this.selectSearchResult = function(selectedResult) {
+    self._searchSelected = true;
+    self.searchString(selectedResult.text);
+    if (selectedResult.type === 'place') {
+      self.searchResultsDetails(ko.utils.arrayFilter(self._initialSearchResults, function(element) {
+        return element.name === selectedResult.text;
+      }));
+    } else if (selectedResult.type === 'type') {
+      self.searchResultsDetails(ko.utils.arrayFilter(self._initialSearchResults, function(element) {
+        return element.type === selectedResult.text;
+      }));
+    }
+  };
+
+  /**
+   * Toggle if detail body for a given place is visible
+   * @memberof ViewModel
+   * @method
+   * @param {object} detail - detail for which to toggle visibility
+   */
+  this.toggleDetailVisible = function(detail) {
+    if (detail.chevronClass() === 'glyphicon-chevron-up') {
+      detail.chevronClass('glyphicon-chevron-down');
+      detail.visible(false);
+    } else {
+      detail.chevronClass('glyphicon-chevron-up');
+      detail.visible(true);
+    }
+    showInfowindow(detail.marker);
+  };
+
+  /**
+   * Set place details to be displayed on the reviews and opening times modal
+   * @memberof ViewModel
+   * @method
+   * @param {object} detail - detail from which to set modal's data
+   */
+  this.setPlaceDetails = function(detail) {
+    self.placeDetails({
+      openingHours: detail.openingHours,
+      reviews: detail.reviews
+    });
+  };
+
+  /**
+   * Helper function to format types on the settings modal
+   * @memberof ViewModel
+   * @method
+   * @param {string} type - string representing the type
+   */
+  this.formatType = function(type) {
+    return type.replace(/_/g, ' ');
+  };
+
+  /** 
+   * Adjust markers and search results based on search string
+   * @memberof ViewModel
+   * @method
+   */
+  this.searchString.subscribe(function() {
+    var marker, type, title;
+    self.searchResults([]);
+    self._searchTexts = [];
+    for (var markerIndex in self.markers()) {
+      marker = self.markers()[markerIndex];
+      type = marker.type.toLowerCase();
+      title = marker.title.toLowerCase();
+      if (!self.searchString().length) {
+        marker.setMap(self.map);
+      } else {
+        if (title.indexOf(self.searchString().toLowerCase()) > -1) {
+          marker.setMap(self.map);
+          self.searchResults.push({
+            icon: 'pac-icon-marker',
+            text: marker.title,
+            type: 'place'
+          });
+          self._searchTexts.push(marker.title);
+        } else if (type.indexOf(self.searchString().toLowerCase()) > -1) {
+          marker.setMap(self.map);
+          if (self._searchTexts.indexOf(marker.type) == -1) {
+            self.searchResults.push({
+              icon: 'pac-icon-search',
+              text: marker.type,
+              type: 'type'
+            });
+            self._searchTexts.push(marker.type);
+          }
+        } else {
+          marker.setMap(null);
+        }
+      }
+    }
+    if (self._searchSelected) {
+      self._searchSelected = false;
+    }
+  });
+
+  this.initMap(document.getElementById('map-canvas'));
+  getLocationInformation('London');
+}
+
+$(function() {
+  ko.applyBindings( new ViewModel() );
+});
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="DetailElement.html">DetailElement</a></li><li><a href="ViewModel.html">ViewModel</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.3.0-beta2</a> on Thu Mar 12 2015 21:01:48 GMT+0000 (GMT)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

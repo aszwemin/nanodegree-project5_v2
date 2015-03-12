@@ -1,0 +1,197 @@
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Project 5</title>
+    <link rel="stylesheet" href="build/css/styles.css">
+    <link rel="stylesheet" href="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css">
+    <script type="text/javascript"
+      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB9QICF-Y2-Gp1psgaDgF5hUn_nReJObek&libraries=places">
+    </script>
+    <script type="text/javascript" src="build/js/jquery-2.1.1.min.js"></script>
+    <script type="text/javascript" src="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.2/js/bootstrap.min.js"></script>
+    <script type="text/javascript" src="build/js/knockout-3.2.0.js"></script>
+    <script type="text/javascript" src="build/js/knockout.validation.min.js"></script>
+    <script type="text/javascript" src="build/js/app.js"></script>
+  </head>
+  <body>
+    <div id="map-canvas"></div>
+    <div id="search-bar" class="col-md-6">
+      <input class="col-md-11" type="text" data-bind="textInput: searchString, attr: { placeholder: 'Search in ' + currentLocation() }" />
+      <!-- ko if: weather -->
+      <div class="col-md-1">
+        <img data-bind="attr: { src: 'http://openweathermap.org/img/w/' + weather().icon + '.png' }"></img>
+        <span data-bind="text: weather().temperature + '&#176;C'">
+      </div>
+      <!-- /ko -->
+    </div> 
+    <div id="search-results" class="col-md-6" data-bind="visible: searchResultsVisible, foreach: searchResults">
+      <div class="pac-item">
+        <a href="#" data-bind="click: $parent.selectSearchResult">
+          <span data-bind="attr: { class: icon + ' pac-icon' }"></span>
+          <span class="pac-item-query" data-bind="text: text"></span>
+          <span></span>
+        </a>
+      </div>
+    </div>
+    <div id="search-results-details" class="col-md-3" data-bind="visible: searchResultsDetails().length">
+      <div class="panels-container" data-bind="foreach: searchResultsDetails">
+        <div class="panel panel-info">
+          <div class="panel-heading clearfix" data-bind="click: $parent.toggleDetailVisible">
+            <div class="icon col-xs-1">
+              <img class="img-responsive" data-bind="attr: { src: icon }" />
+            </div>
+            <h4 class="col-xs-10">
+              <!-- ko text: name --><!-- /ko -->
+              <!-- ko if: open() != null -->
+              <span data-bind="attr: { class: (open() ? 'label-success' : 'label-danger') + ' label' }, text: open() ? 'Open' : 'Closed'"></span>
+              <!-- /ko -->
+              <!-- ko if: open() == null -->
+              <span class="label label-primary">Unknown</span>
+              <!-- /ko -->
+            </h4>
+            <span data-bind="attr: { class: chevronClass() + ' glyphicon col-xs-1' }" aria-hidden="true"></span>
+          </div>
+          <div class="panel-body" data-bind="visible: visible">
+            <div class="col-md-7">
+              <div class="col-md-12 no-gutter">
+                <span class="glyphicon glyphicon-earphone" aria-hidden="true"></span>
+                <span data-bind="text: phone"></span>
+              </div>
+              <div class="col-md-12 no-gutter">
+                <span class="glyphicon glyphicon-home" aria-hidden="true"></span>
+                <span data-bind="text: address"></span>
+              </div>
+              <div class="col-md-12 no-gutter">
+                <span class="glyphicon glyphicon-globe" aria-hidden="true"></span>
+                <!-- ko if: url() == 'N/A' -->
+                <span>N/A</span>
+                <!-- /ko -->
+                <!-- ko if: url() != 'N/A' -->
+                <a target="_blank" data-bind="attr: { href: url }, text: url">Visit Website</a>
+                <!-- /ko -->
+              </div>
+            </div>
+            <div class="col-md-5">
+              <img data-bind="attr: { src: 'https://maps.googleapis.com/maps/api/streetview?size=150x150&location=' + location.k + ',' + location.D + '&key=AIzaSyAQQKdRYZeSSDMm9Lrh98wDAmGEzQ8mB8U' }">
+            </div>
+            <button type="button" class="btn btn-primary btn-sm col-xs-12 show-reviews" alt="reviews" data-toggle="modal" data-target="#reviewsModal" data-bind="click: $parent.setPlaceDetails">Show reviews/opening times</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="buttons" class="col-xs-4 col-sm-2 col-md-2">
+      <img id="help" class="col-xs-6 col-md-3" src="img/question.png" alt="help" data-toggle="modal" data-target="#helpModal" />
+      <img id="settings" class="col-xs-6 col-md-3" src="img/settings.png" alt="settings" data-toggle="modal" data-target="#settingsModal" />
+    </div>
+
+    <!-- Reviews and opening times modal -->
+    <div class="modal fade" id="reviewsModal" tabindex="-1" role="dialog" aria-labelledby="reviewsModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header clearfix">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="reviewsModalLabel">Reviews and opening times</h4>
+          </div>
+          <div class="modal-body clearfix">
+            <!-- ko if: placeDetails() -->
+            <!-- ko if: placeDetails().openingHours -->
+            <div class="col-md-4">
+              <h5 class="col-md-12"><u>Opening times:</u></h5>
+              <!-- ko foreach: placeDetails().openingHours().weekday_text -->
+              <span class="col-md-12" data-bind="text: $data"></span>
+              <!-- /ko -->
+            </div>
+            <!-- /ko -->
+
+            <!-- ko if: placeDetails().reviews -->
+            <div class="col-md-8" data-bind="foreach: placeDetails().reviews">
+              <h5>
+                <a data-bind="attr: { href: author_url }, text: author_name"></a>
+                <span data-bind="attr: { class: (rating > 3 ? 'label-success' : 'label-warning') + ' label' }, text: rating"></span>
+              </h5>
+              <p data-bind="text: text"></p>
+            </div>
+            <!-- /ko -->
+            <!-- /ko -->
+          </div>
+          <div class="modal-footer clearfix">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Help modal -->
+    <div class="modal fade" id="helpModal" tabindex="-1" role="dialog" aria-labelledby="helpModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="helpModalLabel">Help</h4>
+          </div>
+          <div class="modal-body">
+            <p>Stuck for things to do in a city? Need to get to the closest Cafe for a burst of caffeine?</p>
+            <p>This application will show you a list of all the amenities (filtered to what you're interested in) in the local area. By selecting one that takes your fancy, you'll be shown a range of important information; from opening times to customer reviews.</p>
+            <p>Don't limit yourself to your current location. Planning a trip to New Zealand? Have a look ahead and see what Auckland has to offer. Want a cultural day in Paris? Plan your route by searching for the Museums.</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings modal -->
+    <div class="modal fade" id="settingsModal" tabindex="-1" role="dialog" aria-labelledby="settingsModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <form class="form-horizontal" data-bind="submit: saveSettings">
+          <div class="modal-content">
+            <div class="modal-header">
+              <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+              <h4 class="modal-title" id="settingsModalLabel">Settings</h4>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label for="formLocation" class="col-md-2 control-label">Location</label>
+                <div class="col-md-8">
+                  <input type="text" class="form-control" id="formLocation" data-bind="value: currentLocation" placeholder="Enter location" required />
+                </div>
+              </div>
+              <label>Establishment types</label>
+              <div data-bind="foreach: possiblePlaceTypes" id="formTypes" class="row">
+                <div class="col-md-4">
+                  <label class="checkbox-inline">
+                    <input type="checkbox" data-bind="value: $data, checked: $parent.placeTypes">
+                    <span data-bind="text: $parent.formatType($data)"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+              <button type="submit" class="btn btn-success">Save</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error modal -->
+    <div class="modal fade" id="errorModal" tabindex="-1" role="dialog" aria-labelledby="errorModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            <h4 class="modal-title" id="errorModalLabel">Alert</h4>
+          </div>
+          <div class="modal-body" data-bind="text: error">
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </body>
+</html>
