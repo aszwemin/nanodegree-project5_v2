@@ -37,3 +37,12 @@ Libraries and frameworks used:
 - Knockout
 
 - Knockout Validation
+
+
+APIs used:
+
+- Google Maps
+
+- Google Places
+
+- Open weather API (http://openweathermap.org/api)
